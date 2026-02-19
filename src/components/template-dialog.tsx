@@ -15,6 +15,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
+import { Switch } from "@/components/ui/switch";
 import {
   Select,
   SelectContent,
@@ -45,6 +46,7 @@ export function TemplateDialog({
   const [editText, setEditText] = useState("");
   const [editCategory, setEditCategory] = useState("");
   const [editExamples, setEditExamples] = useState<Record<string, string>>({});
+  const [editRequired, setEditRequired] = useState<Record<string, boolean>>({});
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -64,11 +66,27 @@ export function TemplateDialog({
     [template, values],
   );
 
+  // 必須変数のうち未入力のものをチェック
+  const missingRequired = useMemo(() => {
+    if (!template) return [];
+    const req = template.variable_required ?? {};
+    return variables.filter((v) => {
+      const isReq = req[v] !== false; // デフォルト必須
+      return isReq && !values[v]?.trim();
+    });
+  }, [template, variables, values]);
+
+  const canCopy = missingRequired.length === 0;
+
   const handleChange = (key: string, value: string) => {
     setValues((prev) => ({ ...prev, [key]: value }));
   };
 
   const handleCopy = async () => {
+    if (!canCopy) {
+      toast.error("必須の変数をすべて入力してください");
+      return;
+    }
     await navigator.clipboard.writeText(preview);
     toast.success("クリップボードにコピーしました");
   };
@@ -89,12 +107,19 @@ export function TemplateDialog({
     setEditText(template.template_text);
     setEditCategory(template.category);
     setEditExamples(template.variable_examples ?? {});
+    setEditRequired(template.variable_required ?? {});
     setMode("edit");
   };
 
   const handleEditExampleChange = (key: string, value: string) => {
     setEditExamples((prev) => ({ ...prev, [key]: value }));
   };
+
+  const handleEditRequiredChange = (key: string, checked: boolean) => {
+    setEditRequired((prev) => ({ ...prev, [key]: checked }));
+  };
+
+  const isEditRequired = (v: string) => editRequired[v] !== false;
 
   const handleSaveEdit = async () => {
     if (!template) return;
@@ -103,10 +128,12 @@ export function TemplateDialog({
       return;
     }
     const cleanExamples: Record<string, string> = {};
+    const cleanRequired: Record<string, boolean> = {};
     for (const v of editVariables) {
       if (editExamples[v]?.trim()) {
         cleanExamples[v] = editExamples[v].trim();
       }
+      cleanRequired[v] = isEditRequired(v);
     }
     setSaving(true);
     const { data, error } = await getSupabase()
@@ -117,6 +144,7 @@ export function TemplateDialog({
         template_text: editText.trim(),
         category: editCategory,
         variable_examples: cleanExamples,
+        variable_required: cleanRequired,
       })
       .eq("id", template.id)
       .select()
@@ -150,6 +178,7 @@ export function TemplateDialog({
   if (!template) return null;
 
   const examples = template.variable_examples ?? {};
+  const requiredMap = template.variable_required ?? {};
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
@@ -175,18 +204,36 @@ export function TemplateDialog({
             {variables.length > 0 && (
               <div className="space-y-3">
                 <p className="text-sm font-medium">変数を入力</p>
-                {variables.map((v) => (
-                  <div key={v} className="space-y-1">
-                    <label className="text-sm text-muted-foreground">
-                      {v}
-                    </label>
-                    <Input
-                      placeholder={examples[v] || `{{${v}}} の値を入力…`}
-                      value={values[v] || ""}
-                      onChange={(e) => handleChange(v, e.target.value)}
-                    />
-                  </div>
-                ))}
+                {variables.map((v) => {
+                  const isReq = requiredMap[v] !== false;
+                  const isEmpty = !values[v]?.trim();
+                  return (
+                    <div key={v} className="space-y-1">
+                      <label className="flex items-center gap-2 text-sm text-muted-foreground">
+                        {v}
+                        {isReq ? (
+                          <span className="rounded bg-red-100 px-1.5 py-0.5 text-[10px] font-semibold text-red-600">
+                            必須
+                          </span>
+                        ) : (
+                          <span className="rounded bg-gray-100 px-1.5 py-0.5 text-[10px] font-semibold text-gray-500">
+                            任意
+                          </span>
+                        )}
+                      </label>
+                      <Input
+                        placeholder={examples[v] || `{{${v}}} の値を入力…`}
+                        value={values[v] || ""}
+                        onChange={(e) => handleChange(v, e.target.value)}
+                        className={
+                          isReq && isEmpty
+                            ? "border-red-200 focus-visible:ring-red-300"
+                            : ""
+                        }
+                      />
+                    </div>
+                  );
+                })}
               </div>
             )}
 
@@ -197,7 +244,13 @@ export function TemplateDialog({
               </div>
             </div>
 
-            <Button onClick={handleCopy} className="w-full">
+            {!canCopy && (
+              <p className="text-xs text-red-500">
+                必須の変数をすべて入力するとコピーできます（残り{missingRequired.length}件）
+              </p>
+            )}
+
+            <Button onClick={handleCopy} className="w-full" disabled={!canCopy}>
               コピー
             </Button>
 
@@ -285,21 +338,35 @@ export function TemplateDialog({
                 <div className="rounded-lg border bg-muted/50 p-4 space-y-3">
                   <div>
                     <p className="text-sm font-medium">
-                      変数の例文（{editVariables.length}件）
+                      変数の設定（{editVariables.length}件）
                     </p>
                     <p className="text-xs text-muted-foreground mt-0.5">
-                      使用時にプレースホルダーとして表示されます
+                      例文と必須/任意を設定できます
                     </p>
                   </div>
                   {editVariables.map((v) => (
-                    <div key={v} className="space-y-1">
-                      <label className="flex items-center gap-2 text-sm">
+                    <div
+                      key={v}
+                      className="space-y-2 rounded-md border bg-white p-3"
+                    >
+                      <div className="flex items-center justify-between">
                         <span className="rounded-full bg-primary/10 px-2.5 py-0.5 text-xs font-medium text-primary">
                           {v}
                         </span>
-                      </label>
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs text-muted-foreground">
+                            {isEditRequired(v) ? "必須" : "任意"}
+                          </span>
+                          <Switch
+                            checked={isEditRequired(v)}
+                            onCheckedChange={(checked) =>
+                              handleEditRequiredChange(v, checked)
+                            }
+                          />
+                        </div>
+                      </div>
                       <Input
-                        placeholder={`例: ${v}に入る値のサンプル`}
+                        placeholder={`例文: ${v}に入る値のサンプル`}
                         value={editExamples[v] || ""}
                         onChange={(e) =>
                           handleEditExampleChange(v, e.target.value)

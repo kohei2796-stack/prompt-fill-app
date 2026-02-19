@@ -18,5 +18,6 @@ export type PromptTemplate = {
   template_text: string;
   category: string;
   variable_examples: Record<string, string>;
+  variable_required: Record<string, boolean>;
   created_at: string;
 };

@@ -9,6 +9,7 @@ import { CATEGORIES } from "@/lib/categories";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
+import { Switch } from "@/components/ui/switch";
 import {
   Select,
   SelectContent,
@@ -30,12 +31,19 @@ export default function NewTemplatePage() {
   const [templateText, setTemplateText] = useState("");
   const [category, setCategory] = useState("other");
   const [examples, setExamples] = useState<Record<string, string>>({});
+  const [required, setRequired] = useState<Record<string, boolean>>({});
   const [saving, setSaving] = useState(false);
 
   const variables = extractVariables(templateText);
 
+  const isRequired = (v: string) => required[v] !== false; // デフォルト必須
+
   const handleExampleChange = (key: string, value: string) => {
     setExamples((prev) => ({ ...prev, [key]: value }));
+  };
+
+  const handleRequiredChange = (key: string, checked: boolean) => {
+    setRequired((prev) => ({ ...prev, [key]: checked }));
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -44,12 +52,13 @@ export default function NewTemplatePage() {
       toast.error("タイトルとテンプレート本文は必須です");
       return;
     }
-    // 空の例文を除外
     const cleanExamples: Record<string, string> = {};
+    const cleanRequired: Record<string, boolean> = {};
     for (const v of variables) {
       if (examples[v]?.trim()) {
         cleanExamples[v] = examples[v].trim();
       }
+      cleanRequired[v] = isRequired(v);
     }
     setSaving(true);
     const { error } = await getSupabase().from("prompt_templates").insert({
@@ -58,6 +67,7 @@ export default function NewTemplatePage() {
       template_text: templateText.trim(),
       category,
       variable_examples: cleanExamples,
+      variable_required: cleanRequired,
     });
     setSaving(false);
     if (error) {
@@ -133,22 +143,32 @@ export default function NewTemplatePage() {
               <div className="rounded-lg border bg-muted/50 p-4 space-y-4">
                 <div>
                   <p className="text-sm font-medium">
-                    検出された変数（{variables.length}件）
+                    変数の設定（{variables.length}件）
                   </p>
                   <p className="text-xs text-muted-foreground mt-0.5">
-                    各変数に例文を設定すると、使用時にプレースホルダーとして表示されます
+                    例文と必須/任意を設定できます
                   </p>
                 </div>
                 {variables.map((v) => (
-                  <div key={v} className="space-y-1">
-                    <label className="flex items-center gap-2 text-sm">
+                  <div key={v} className="space-y-2 rounded-md border bg-white p-3">
+                    <div className="flex items-center justify-between">
                       <span className="rounded-full bg-primary/10 px-2.5 py-0.5 text-xs font-medium text-primary">
                         {v}
                       </span>
-                      <span className="text-muted-foreground">の例文</span>
-                    </label>
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs text-muted-foreground">
+                          {isRequired(v) ? "必須" : "任意"}
+                        </span>
+                        <Switch
+                          checked={isRequired(v)}
+                          onCheckedChange={(checked) =>
+                            handleRequiredChange(v, checked)
+                          }
+                        />
+                      </div>
+                    </div>
                     <Input
-                      placeholder={`例: ${v}に入る値のサンプル`}
+                      placeholder={`例文: ${v}に入る値のサンプル`}
                       value={examples[v] || ""}
                       onChange={(e) => handleExampleChange(v, e.target.value)}
                     />
