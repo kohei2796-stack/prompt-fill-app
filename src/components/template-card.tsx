@@ -2,13 +2,7 @@
 
 import { PromptTemplate } from "@/lib/supabase";
 import { extractVariables } from "@/lib/template";
-import {
-  Card,
-  CardHeader,
-  CardTitle,
-  CardDescription,
-  CardContent,
-} from "@/components/ui/card";
+import { getCategoryLabel } from "@/lib/categories";
 
 type Props = {
   template: PromptTemplate;
@@ -17,35 +11,46 @@ type Props = {
 
 export function TemplateCard({ template, onClick }: Props) {
   const variables = extractVariables(template.template_text);
+  const date = new Date(template.created_at).toLocaleDateString("ja-JP");
 
   return (
-    <Card
-      className="cursor-pointer transition-shadow hover:shadow-lg"
+    <article
+      className="group cursor-pointer rounded-xl border bg-white p-5 transition-all hover:shadow-md"
       onClick={onClick}
     >
-      <CardHeader>
-        <CardTitle className="text-lg">{template.title}</CardTitle>
-        {template.description && (
-          <CardDescription>{template.description}</CardDescription>
-        )}
-      </CardHeader>
-      <CardContent>
-        <p className="mb-3 line-clamp-3 text-sm text-muted-foreground font-mono whitespace-pre-wrap">
-          {template.template_text}
+      <div className="mb-2 flex items-center gap-2">
+        <span className="rounded-full bg-primary/10 px-2.5 py-0.5 text-xs font-medium text-primary">
+          {getCategoryLabel(template.category)}
+        </span>
+        <span className="text-xs text-muted-foreground">{date}</span>
+      </div>
+
+      <h3 className="mb-1.5 text-base font-semibold leading-snug group-hover:text-primary transition-colors">
+        {template.title}
+      </h3>
+
+      {template.description && (
+        <p className="mb-3 line-clamp-2 text-sm text-muted-foreground">
+          {template.description}
         </p>
-        {variables.length > 0 && (
-          <div className="flex flex-wrap gap-1.5">
-            {variables.map((v) => (
-              <span
-                key={v}
-                className="rounded-full bg-primary/10 px-2.5 py-0.5 text-xs font-medium text-primary"
-              >
-                {v}
-              </span>
-            ))}
-          </div>
-        )}
-      </CardContent>
-    </Card>
+      )}
+
+      <p className="mb-3 line-clamp-2 rounded-md bg-muted/50 px-3 py-2 text-xs text-muted-foreground font-mono">
+        {template.template_text}
+      </p>
+
+      {variables.length > 0 && (
+        <div className="flex flex-wrap gap-1.5">
+          {variables.map((v) => (
+            <span
+              key={v}
+              className="rounded-full border px-2 py-0.5 text-xs text-muted-foreground"
+            >
+              {v}
+            </span>
+          ))}
+        </div>
+      )}
+    </article>
   );
 }

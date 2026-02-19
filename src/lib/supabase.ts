@@ -16,5 +16,6 @@ export type PromptTemplate = {
   title: string;
   description: string;
   template_text: string;
+  category: string;
   created_at: string;
 };
