@@ -29,9 +29,14 @@ export default function NewTemplatePage() {
   const [description, setDescription] = useState("");
   const [templateText, setTemplateText] = useState("");
   const [category, setCategory] = useState("other");
+  const [examples, setExamples] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
 
   const variables = extractVariables(templateText);
+
+  const handleExampleChange = (key: string, value: string) => {
+    setExamples((prev) => ({ ...prev, [key]: value }));
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -39,12 +44,20 @@ export default function NewTemplatePage() {
       toast.error("タイトルとテンプレート本文は必須です");
       return;
     }
+    // 空の例文を除外
+    const cleanExamples: Record<string, string> = {};
+    for (const v of variables) {
+      if (examples[v]?.trim()) {
+        cleanExamples[v] = examples[v].trim();
+      }
+    }
     setSaving(true);
     const { error } = await getSupabase().from("prompt_templates").insert({
       title: title.trim(),
       description: description.trim(),
       template_text: templateText.trim(),
       category,
+      variable_examples: cleanExamples,
     });
     setSaving(false);
     if (error) {
@@ -117,20 +130,30 @@ export default function NewTemplatePage() {
             </div>
 
             {variables.length > 0 && (
-              <div className="rounded-lg border bg-muted/50 p-3">
-                <p className="mb-2 text-sm font-medium">
-                  検出された変数（{variables.length}件）
-                </p>
-                <div className="flex flex-wrap gap-1.5">
-                  {variables.map((v) => (
-                    <span
-                      key={v}
-                      className="rounded-full bg-primary/10 px-2.5 py-0.5 text-xs font-medium text-primary"
-                    >
-                      {v}
-                    </span>
-                  ))}
+              <div className="rounded-lg border bg-muted/50 p-4 space-y-4">
+                <div>
+                  <p className="text-sm font-medium">
+                    検出された変数（{variables.length}件）
+                  </p>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    各変数に例文を設定すると、使用時にプレースホルダーとして表示されます
+                  </p>
                 </div>
+                {variables.map((v) => (
+                  <div key={v} className="space-y-1">
+                    <label className="flex items-center gap-2 text-sm">
+                      <span className="rounded-full bg-primary/10 px-2.5 py-0.5 text-xs font-medium text-primary">
+                        {v}
+                      </span>
+                      <span className="text-muted-foreground">の例文</span>
+                    </label>
+                    <Input
+                      placeholder={`例: ${v}に入る値のサンプル`}
+                      value={examples[v] || ""}
+                      onChange={(e) => handleExampleChange(v, e.target.value)}
+                    />
+                  </div>
+                ))}
               </div>
             )}
 

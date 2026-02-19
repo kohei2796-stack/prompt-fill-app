@@ -44,6 +44,7 @@ export function TemplateDialog({
   const [editDescription, setEditDescription] = useState("");
   const [editText, setEditText] = useState("");
   const [editCategory, setEditCategory] = useState("");
+  const [editExamples, setEditExamples] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -51,6 +52,11 @@ export function TemplateDialog({
   const variables = useMemo(
     () => (template ? extractVariables(template.template_text) : []),
     [template],
+  );
+
+  const editVariables = useMemo(
+    () => extractVariables(editText),
+    [editText],
   );
 
   const preview = useMemo(
@@ -82,7 +88,12 @@ export function TemplateDialog({
     setEditDescription(template.description);
     setEditText(template.template_text);
     setEditCategory(template.category);
+    setEditExamples(template.variable_examples ?? {});
     setMode("edit");
+  };
+
+  const handleEditExampleChange = (key: string, value: string) => {
+    setEditExamples((prev) => ({ ...prev, [key]: value }));
   };
 
   const handleSaveEdit = async () => {
@@ -90,6 +101,12 @@ export function TemplateDialog({
     if (!editTitle.trim() || !editText.trim()) {
       toast.error("タイトルとテンプレート本文は必須です");
       return;
+    }
+    const cleanExamples: Record<string, string> = {};
+    for (const v of editVariables) {
+      if (editExamples[v]?.trim()) {
+        cleanExamples[v] = editExamples[v].trim();
+      }
     }
     setSaving(true);
     const { data, error } = await getSupabase()
@@ -99,6 +116,7 @@ export function TemplateDialog({
         description: editDescription.trim(),
         template_text: editText.trim(),
         category: editCategory,
+        variable_examples: cleanExamples,
       })
       .eq("id", template.id)
       .select()
@@ -131,6 +149,8 @@ export function TemplateDialog({
 
   if (!template) return null;
 
+  const examples = template.variable_examples ?? {};
+
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-2xl">
@@ -161,7 +181,7 @@ export function TemplateDialog({
                       {v}
                     </label>
                     <Input
-                      placeholder={`{{${v}}} の値を入力…`}
+                      placeholder={examples[v] || `{{${v}}} の値を入力…`}
                       value={values[v] || ""}
                       onChange={(e) => handleChange(v, e.target.value)}
                     />
@@ -260,6 +280,35 @@ export function TemplateDialog({
                   onChange={(e) => setEditText(e.target.value)}
                 />
               </div>
+
+              {editVariables.length > 0 && (
+                <div className="rounded-lg border bg-muted/50 p-4 space-y-3">
+                  <div>
+                    <p className="text-sm font-medium">
+                      変数の例文（{editVariables.length}件）
+                    </p>
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      使用時にプレースホルダーとして表示されます
+                    </p>
+                  </div>
+                  {editVariables.map((v) => (
+                    <div key={v} className="space-y-1">
+                      <label className="flex items-center gap-2 text-sm">
+                        <span className="rounded-full bg-primary/10 px-2.5 py-0.5 text-xs font-medium text-primary">
+                          {v}
+                        </span>
+                      </label>
+                      <Input
+                        placeholder={`例: ${v}に入る値のサンプル`}
+                        value={editExamples[v] || ""}
+                        onChange={(e) =>
+                          handleEditExampleChange(v, e.target.value)
+                        }
+                      />
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
 
             <div className="flex gap-2">
