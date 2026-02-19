@@ -24,6 +24,10 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 
+function escapeRegex(str: string) {
+  return str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
 type Props = {
   template: PromptTemplate | null;
   open: boolean;
@@ -47,6 +51,7 @@ export function TemplateDialog({
   const [editCategory, setEditCategory] = useState("");
   const [editExamples, setEditExamples] = useState<Record<string, string>>({});
   const [editRequired, setEditRequired] = useState<Record<string, boolean>>({});
+  const [newVarName, setNewVarName] = useState("");
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -66,12 +71,11 @@ export function TemplateDialog({
     [template, values],
   );
 
-  // 必須変数のうち未入力のものをチェック
   const missingRequired = useMemo(() => {
     if (!template) return [];
     const req = template.variable_required ?? {};
     return variables.filter((v) => {
-      const isReq = req[v] !== false; // デフォルト必須
+      const isReq = req[v] !== false;
       return isReq && !values[v]?.trim();
     });
   }, [template, variables, values]);
@@ -96,6 +100,7 @@ export function TemplateDialog({
       setValues({});
       setMode("use");
       setConfirmDelete(false);
+      setNewVarName("");
     }
     onOpenChange(nextOpen);
   };
@@ -108,6 +113,7 @@ export function TemplateDialog({
     setEditCategory(template.category);
     setEditExamples(template.variable_examples ?? {});
     setEditRequired(template.variable_required ?? {});
+    setNewVarName("");
     setMode("edit");
   };
 
@@ -121,15 +127,36 @@ export function TemplateDialog({
 
   const isEditRequired = (v: string) => editRequired[v] !== false;
 
+  const handleEditRemoveVar = (v: string) => {
+    setEditText((prev) =>
+      prev.replace(new RegExp(`\\{\\{\\s*${escapeRegex(v)}\\s*\\}\\}`, "g"), ""),
+    );
+  };
+
+  const handleEditAddVar = () => {
+    const name = newVarName.trim();
+    if (!name) return;
+    if (editVariables.includes(name)) {
+      toast.error("同じ名前の変数が既に存在します");
+      return;
+    }
+    setEditText((prev) => {
+      const sep = prev.endsWith("\n") || prev === "" ? "" : "\n";
+      return prev + sep + `{{${name}}}`;
+    });
+    setNewVarName("");
+  };
+
   const handleSaveEdit = async () => {
     if (!template) return;
     if (!editTitle.trim() || !editText.trim()) {
       toast.error("タイトルとテンプレート本文は必須です");
       return;
     }
+    const currentVars = extractVariables(editText);
     const cleanExamples: Record<string, string> = {};
     const cleanRequired: Record<string, boolean> = {};
-    for (const v of editVariables) {
+    for (const v of currentVars) {
       if (editExamples[v]?.trim()) {
         cleanExamples[v] = editExamples[v].trim();
       }
@@ -159,7 +186,7 @@ export function TemplateDialog({
     setMode("use");
   };
 
-  const handleDelete = async () => {
+  const handleDeleteTemplate = async () => {
     if (!template) return;
     setDeleting(true);
     const { error } = await getSupabase()
@@ -278,7 +305,7 @@ export function TemplateDialog({
                   size="sm"
                   className="flex-1"
                   disabled={deleting}
-                  onClick={handleDelete}
+                  onClick={handleDeleteTemplate}
                 >
                   {deleting ? "削除中…" : "本当に削除する"}
                 </Button>
@@ -334,26 +361,28 @@ export function TemplateDialog({
                 />
               </div>
 
-              {editVariables.length > 0 && (
-                <div className="rounded-lg border bg-muted/50 p-4 space-y-3">
-                  <div>
-                    <p className="text-sm font-medium">
-                      変数の設定（{editVariables.length}件）
-                    </p>
-                    <p className="text-xs text-muted-foreground mt-0.5">
-                      例文と必須/任意を設定できます
-                    </p>
-                  </div>
-                  {editVariables.map((v) => (
-                    <div
-                      key={v}
-                      className="space-y-2 rounded-md border bg-white p-3"
-                    >
-                      <div className="flex items-center justify-between">
-                        <span className="rounded-full bg-primary/10 px-2.5 py-0.5 text-xs font-medium text-primary">
-                          {v}
-                        </span>
-                        <div className="flex items-center gap-2">
+              {/* 変数の管理セクション */}
+              <div className="rounded-lg border bg-muted/50 p-4 space-y-3">
+                <div>
+                  <p className="text-sm font-medium">
+                    変数の管理{editVariables.length > 0 && `（${editVariables.length}件）`}
+                  </p>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    例文・必須/任意の設定、変数の追加・削除ができます
+                  </p>
+                </div>
+
+                {editVariables.map((v) => (
+                  <div
+                    key={v}
+                    className="space-y-2 rounded-md border bg-white p-3"
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="rounded-full bg-primary/10 px-2.5 py-0.5 text-xs font-medium text-primary">
+                        {v}
+                      </span>
+                      <div className="flex items-center gap-3">
+                        <div className="flex items-center gap-1.5">
                           <span className="text-xs text-muted-foreground">
                             {isEditRequired(v) ? "必須" : "任意"}
                           </span>
@@ -364,18 +393,49 @@ export function TemplateDialog({
                             }
                           />
                         </div>
+                        <button
+                          type="button"
+                          onClick={() => handleEditRemoveVar(v)}
+                          className="rounded-md px-1.5 py-0.5 text-xs text-muted-foreground transition-colors hover:bg-red-50 hover:text-red-500"
+                        >
+                          ✕ 削除
+                        </button>
                       </div>
-                      <Input
-                        placeholder={`例文: ${v}に入る値のサンプル`}
-                        value={editExamples[v] || ""}
-                        onChange={(e) =>
-                          handleEditExampleChange(v, e.target.value)
-                        }
-                      />
                     </div>
-                  ))}
+                    <Input
+                      placeholder={`例文: ${v}に入る値のサンプル`}
+                      value={editExamples[v] || ""}
+                      onChange={(e) =>
+                        handleEditExampleChange(v, e.target.value)
+                      }
+                    />
+                  </div>
+                ))}
+
+                <div className="flex gap-2">
+                  <Input
+                    placeholder="新しい変数名を入力…"
+                    value={newVarName}
+                    onChange={(e) => setNewVarName(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        handleEditAddVar();
+                      }
+                    }}
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="shrink-0"
+                    onClick={handleEditAddVar}
+                    disabled={!newVarName.trim()}
+                  >
+                    ＋ 追加
+                  </Button>
                 </div>
-              )}
+              </div>
             </div>
 
             <div className="flex gap-2">

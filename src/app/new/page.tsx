@@ -32,11 +32,12 @@ export default function NewTemplatePage() {
   const [category, setCategory] = useState("other");
   const [examples, setExamples] = useState<Record<string, string>>({});
   const [required, setRequired] = useState<Record<string, boolean>>({});
+  const [newVarName, setNewVarName] = useState("");
   const [saving, setSaving] = useState(false);
 
   const variables = extractVariables(templateText);
 
-  const isRequired = (v: string) => required[v] !== false; // デフォルト必須
+  const isRequired = (v: string) => required[v] !== false;
 
   const handleExampleChange = (key: string, value: string) => {
     setExamples((prev) => ({ ...prev, [key]: value }));
@@ -46,15 +47,37 @@ export default function NewTemplatePage() {
     setRequired((prev) => ({ ...prev, [key]: checked }));
   };
 
+  const handleRemoveVar = (v: string) => {
+    // テンプレート本文から {{変数名}} を削除
+    setTemplateText((prev) =>
+      prev.replace(new RegExp(`\\{\\{\\s*${escapeRegex(v)}\\s*\\}\\}`, "g"), ""),
+    );
+  };
+
+  const handleAddVar = () => {
+    const name = newVarName.trim();
+    if (!name) return;
+    if (variables.includes(name)) {
+      toast.error("同じ名前の変数が既に存在します");
+      return;
+    }
+    setTemplateText((prev) => {
+      const sep = prev.endsWith("\n") || prev === "" ? "" : "\n";
+      return prev + sep + `{{${name}}}`;
+    });
+    setNewVarName("");
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!title.trim() || !templateText.trim()) {
       toast.error("タイトルとテンプレート本文は必須です");
       return;
     }
+    const currentVars = extractVariables(templateText);
     const cleanExamples: Record<string, string> = {};
     const cleanRequired: Record<string, boolean> = {};
-    for (const v of variables) {
+    for (const v of currentVars) {
       if (examples[v]?.trim()) {
         cleanExamples[v] = examples[v].trim();
       }
@@ -139,23 +162,25 @@ export default function NewTemplatePage() {
               />
             </div>
 
-            {variables.length > 0 && (
-              <div className="rounded-lg border bg-muted/50 p-4 space-y-4">
-                <div>
-                  <p className="text-sm font-medium">
-                    変数の設定（{variables.length}件）
-                  </p>
-                  <p className="text-xs text-muted-foreground mt-0.5">
-                    例文と必須/任意を設定できます
-                  </p>
-                </div>
-                {variables.map((v) => (
-                  <div key={v} className="space-y-2 rounded-md border bg-white p-3">
-                    <div className="flex items-center justify-between">
-                      <span className="rounded-full bg-primary/10 px-2.5 py-0.5 text-xs font-medium text-primary">
-                        {v}
-                      </span>
-                      <div className="flex items-center gap-2">
+            {/* 変数の管理セクション */}
+            <div className="rounded-lg border bg-muted/50 p-4 space-y-4">
+              <div>
+                <p className="text-sm font-medium">
+                  変数の管理{variables.length > 0 && `（${variables.length}件）`}
+                </p>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  例文・必須/任意の設定、変数の追加・削除ができます
+                </p>
+              </div>
+
+              {variables.map((v) => (
+                <div key={v} className="space-y-2 rounded-md border bg-white p-3">
+                  <div className="flex items-center justify-between">
+                    <span className="rounded-full bg-primary/10 px-2.5 py-0.5 text-xs font-medium text-primary">
+                      {v}
+                    </span>
+                    <div className="flex items-center gap-3">
+                      <div className="flex items-center gap-1.5">
                         <span className="text-xs text-muted-foreground">
                           {isRequired(v) ? "必須" : "任意"}
                         </span>
@@ -166,16 +191,48 @@ export default function NewTemplatePage() {
                           }
                         />
                       </div>
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveVar(v)}
+                        className="rounded-md px-1.5 py-0.5 text-xs text-muted-foreground transition-colors hover:bg-red-50 hover:text-red-500"
+                      >
+                        ✕ 削除
+                      </button>
                     </div>
-                    <Input
-                      placeholder={`例文: ${v}に入る値のサンプル`}
-                      value={examples[v] || ""}
-                      onChange={(e) => handleExampleChange(v, e.target.value)}
-                    />
                   </div>
-                ))}
+                  <Input
+                    placeholder={`例文: ${v}に入る値のサンプル`}
+                    value={examples[v] || ""}
+                    onChange={(e) => handleExampleChange(v, e.target.value)}
+                  />
+                </div>
+              ))}
+
+              {/* 新しい変数を追加 */}
+              <div className="flex gap-2">
+                <Input
+                  placeholder="新しい変数名を入力…"
+                  value={newVarName}
+                  onChange={(e) => setNewVarName(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      handleAddVar();
+                    }
+                  }}
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="shrink-0"
+                  onClick={handleAddVar}
+                  disabled={!newVarName.trim()}
+                >
+                  ＋ 追加
+                </Button>
               </div>
-            )}
+            </div>
 
             <Button type="submit" className="w-full" disabled={saving}>
               {saving ? "保存中…" : "テンプレートを保存"}
@@ -185,4 +242,8 @@ export default function NewTemplatePage() {
       </Card>
     </div>
   );
+}
+
+function escapeRegex(str: string) {
+  return str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
