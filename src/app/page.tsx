@@ -1,19 +1,21 @@
 "use client";
 
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useState, useMemo, useCallback } from "react";
 import { getSupabase, PromptTemplate } from "@/lib/supabase";
 import { getCategoryLabel } from "@/lib/categories";
 import { Sidebar } from "@/components/sidebar";
 import { TemplateCard } from "@/components/template-card";
 import { TemplateDialog } from "@/components/template-dialog";
+import { Input } from "@/components/ui/input";
 
 export default function HomePage() {
   const [templates, setTemplates] = useState<PromptTemplate[]>([]);
   const [selected, setSelected] = useState<PromptTemplate | null>(null);
   const [category, setCategory] = useState<string | null>(null);
+  const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
+  const fetchTemplates = useCallback(() => {
     getSupabase()
       .from("prompt_templates")
       .select("*")
@@ -24,6 +26,10 @@ export default function HomePage() {
       });
   }, []);
 
+  useEffect(() => {
+    fetchTemplates();
+  }, [fetchTemplates]);
+
   const counts = useMemo(() => {
     const map: Record<string, number> = {};
     for (const t of templates) {
@@ -32,9 +38,34 @@ export default function HomePage() {
     return map;
   }, [templates]);
 
-  const filtered = category
-    ? templates.filter((t) => t.category === category)
-    : templates;
+  const filtered = useMemo(() => {
+    let result = templates;
+    if (category) {
+      result = result.filter((t) => t.category === category);
+    }
+    if (search.trim()) {
+      const q = search.trim().toLowerCase();
+      result = result.filter(
+        (t) =>
+          t.title.toLowerCase().includes(q) ||
+          t.description.toLowerCase().includes(q) ||
+          t.template_text.toLowerCase().includes(q),
+      );
+    }
+    return result;
+  }, [templates, category, search]);
+
+  const handleDeleted = (id: string) => {
+    setTemplates((prev) => prev.filter((t) => t.id !== id));
+    setSelected(null);
+  };
+
+  const handleUpdated = (updated: PromptTemplate) => {
+    setTemplates((prev) =>
+      prev.map((t) => (t.id === updated.id ? updated : t)),
+    );
+    setSelected(null);
+  };
 
   return (
     <div className="flex gap-8">
@@ -43,6 +74,16 @@ export default function HomePage() {
       </div>
 
       <div className="min-w-0 flex-1">
+        {/* 検索バー */}
+        <div className="mb-5">
+          <Input
+            placeholder="プロンプトを検索…"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="bg-white"
+          />
+        </div>
+
         {/* モバイル用カテゴリセレクト */}
         <div className="mb-4 md:hidden">
           <select
@@ -53,7 +94,7 @@ export default function HomePage() {
             <option value="">すべてのカテゴリ</option>
             {Object.entries(counts).map(([key, count]) => (
               <option key={key} value={key}>
-                {key}（{count}）
+                {getCategoryLabel(key)}（{count}）
               </option>
             ))}
           </select>
@@ -74,9 +115,11 @@ export default function HomePage() {
           </div>
         ) : filtered.length === 0 ? (
           <div className="py-20 text-center text-muted-foreground">
-            {category
-              ? "このカテゴリにはまだテンプレートがありません。"
-              : "テンプレートがまだありません。「＋ 新規投稿」から作成してください。"}
+            {search
+              ? "検索条件に一致するテンプレートがありません。"
+              : category
+                ? "このカテゴリにはまだテンプレートがありません。"
+                : "テンプレートがまだありません。「＋ 新規投稿」から作成してください。"}
           </div>
         ) : (
           <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
@@ -97,6 +140,8 @@ export default function HomePage() {
         onOpenChange={(open) => {
           if (!open) setSelected(null);
         }}
+        onDeleted={handleDeleted}
+        onUpdated={handleUpdated}
       />
     </div>
   );
