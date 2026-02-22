@@ -3,32 +3,79 @@
 import { useEffect, useState, useMemo, useCallback } from "react";
 import { getSupabase, PromptTemplate } from "@/lib/supabase";
 import { getCategoryLabel } from "@/lib/categories";
+import { useAuth } from "@/components/auth-provider";
 import { Sidebar } from "@/components/sidebar";
 import { TemplateCard } from "@/components/template-card";
 import { TemplateDialog } from "@/components/template-dialog";
 import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 
 export default function HomePage() {
+  const { user } = useAuth();
   const [templates, setTemplates] = useState<PromptTemplate[]>([]);
   const [selected, setSelected] = useState<PromptTemplate | null>(null);
   const [category, setCategory] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(true);
+  const [favoriteIds, setFavoriteIds] = useState<Set<string>>(new Set());
+  const [showFavorites, setShowFavorites] = useState(false);
 
   const fetchTemplates = useCallback(() => {
     getSupabase()
       .from("prompt_templates")
-      .select("*")
+      .select("*, profiles(username)")
       .order("created_at", { ascending: false })
       .then(({ data }) => {
-        setTemplates(data ?? []);
+        setTemplates((data as PromptTemplate[]) ?? []);
         setLoading(false);
       });
   }, []);
 
+  const fetchFavorites = useCallback(() => {
+    if (!user) {
+      setFavoriteIds(new Set());
+      return;
+    }
+    getSupabase()
+      .from("favorites")
+      .select("template_id")
+      .eq("user_id", user.id)
+      .then(({ data }) => {
+        setFavoriteIds(
+          new Set((data ?? []).map((f: { template_id: string }) => f.template_id)),
+        );
+      });
+  }, [user]);
+
   useEffect(() => {
     fetchTemplates();
   }, [fetchTemplates]);
+
+  useEffect(() => {
+    fetchFavorites();
+  }, [fetchFavorites]);
+
+  const toggleFavorite = async (templateId: string) => {
+    if (!user) return;
+    if (favoriteIds.has(templateId)) {
+      await getSupabase()
+        .from("favorites")
+        .delete()
+        .eq("user_id", user.id)
+        .eq("template_id", templateId);
+      setFavoriteIds((prev) => {
+        const next = new Set(prev);
+        next.delete(templateId);
+        return next;
+      });
+    } else {
+      await getSupabase()
+        .from("favorites")
+        .insert({ user_id: user.id, template_id: templateId });
+      setFavoriteIds((prev) => new Set(prev).add(templateId));
+    }
+  };
 
   const counts = useMemo(() => {
     const map: Record<string, number> = {};
@@ -40,6 +87,9 @@ export default function HomePage() {
 
   const filtered = useMemo(() => {
     let result = templates;
+    if (showFavorites) {
+      result = result.filter((t) => favoriteIds.has(t.id));
+    }
     if (category) {
       result = result.filter((t) => t.category === category);
     }
@@ -53,7 +103,7 @@ export default function HomePage() {
       );
     }
     return result;
-  }, [templates, category, search]);
+  }, [templates, category, search, showFavorites, favoriteIds]);
 
   const handleDeleted = (id: string) => {
     setTemplates((prev) => prev.filter((t) => t.id !== id));
@@ -74,17 +124,25 @@ export default function HomePage() {
       </div>
 
       <div className="min-w-0 flex-1">
-        {/* 検索バー */}
-        <div className="mb-5">
+        <div className="mb-5 flex gap-2">
           <Input
             placeholder="プロンプトを検索…"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className="bg-white"
           />
+          {user && (
+            <Button
+              variant={showFavorites ? "default" : "outline"}
+              size="sm"
+              className={cn("shrink-0", showFavorites && "bg-primary")}
+              onClick={() => setShowFavorites(!showFavorites)}
+            >
+              ♥ お気に入り
+            </Button>
+          )}
         </div>
 
-        {/* モバイル用カテゴリセレクト */}
         <div className="mb-4 md:hidden">
           <select
             className="w-full rounded-md border bg-white px-3 py-2 text-sm"
@@ -102,7 +160,11 @@ export default function HomePage() {
 
         <div className="mb-6 flex items-center justify-between">
           <h1 className="text-xl font-bold">
-            {category ? getCategoryLabel(category) : "すべてのプロンプト"}
+            {showFavorites
+              ? "お気に入り"
+              : category
+                ? getCategoryLabel(category)
+                : "すべてのプロンプト"}
           </h1>
           <span className="text-sm text-muted-foreground">
             {filtered.length}件
@@ -115,11 +177,13 @@ export default function HomePage() {
           </div>
         ) : filtered.length === 0 ? (
           <div className="py-20 text-center text-muted-foreground">
-            {search
-              ? "検索条件に一致するテンプレートがありません。"
-              : category
-                ? "このカテゴリにはまだテンプレートがありません。"
-                : "テンプレートがまだありません。「＋ 新規投稿」から作成してください。"}
+            {showFavorites
+              ? "お気に入りに追加したプロンプトがありません。"
+              : search
+                ? "検索条件に一致するテンプレートがありません。"
+                : category
+                  ? "このカテゴリにはまだテンプレートがありません。"
+                  : "テンプレートがまだありません。ログインして投稿してください。"}
           </div>
         ) : (
           <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
@@ -127,6 +191,9 @@ export default function HomePage() {
               <TemplateCard
                 key={t.id}
                 template={t}
+                isFavorite={favoriteIds.has(t.id)}
+                showFavorite={!!user}
+                onToggleFavorite={() => toggleFavorite(t.id)}
                 onClick={() => setSelected(t)}
               />
             ))}

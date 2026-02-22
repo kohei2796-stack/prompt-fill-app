@@ -1,10 +1,11 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect, useCallback } from "react";
 import { toast } from "sonner";
-import { getSupabase, PromptTemplate } from "@/lib/supabase";
+import { getSupabase, PromptTemplate, Comment } from "@/lib/supabase";
 import { extractVariables, fillTemplate } from "@/lib/template";
 import { getCategoryLabel, CATEGORIES } from "@/lib/categories";
+import { useAuth } from "@/components/auth-provider";
 import {
   Dialog,
   DialogContent,
@@ -43,6 +44,7 @@ export function TemplateDialog({
   onDeleted,
   onUpdated,
 }: Props) {
+  const { user } = useAuth();
   const [values, setValues] = useState<Record<string, string>>({});
   const [mode, setMode] = useState<"use" | "edit">("use");
   const [editTitle, setEditTitle] = useState("");
@@ -55,6 +57,11 @@ export function TemplateDialog({
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+
+  // Comments
+  const [comments, setComments] = useState<Comment[]>([]);
+  const [commentText, setCommentText] = useState("");
+  const [postingComment, setPostingComment] = useState(false);
 
   const variables = useMemo(
     () => (template ? extractVariables(template.template_text) : []),
@@ -82,6 +89,47 @@ export function TemplateDialog({
 
   const canCopy = missingRequired.length === 0;
 
+  // Fetch comments when template opens
+  const fetchComments = useCallback(() => {
+    if (!template) return;
+    getSupabase()
+      .from("comments")
+      .select("*, profiles(username)")
+      .eq("template_id", template.id)
+      .order("created_at", { ascending: true })
+      .then(({ data }) => {
+        setComments((data as Comment[]) ?? []);
+      });
+  }, [template]);
+
+  useEffect(() => {
+    if (open && template) {
+      fetchComments();
+    }
+  }, [open, template, fetchComments]);
+
+  const handlePostComment = async () => {
+    if (!user || !template || !commentText.trim()) return;
+    setPostingComment(true);
+    const { error } = await getSupabase().from("comments").insert({
+      user_id: user.id,
+      template_id: template.id,
+      content: commentText.trim(),
+    });
+    setPostingComment(false);
+    if (error) {
+      toast.error("コメントの投稿に失敗しました");
+      return;
+    }
+    setCommentText("");
+    fetchComments();
+  };
+
+  const handleDeleteComment = async (commentId: string) => {
+    await getSupabase().from("comments").delete().eq("id", commentId);
+    fetchComments();
+  };
+
   const handleChange = (key: string, value: string) => {
     setValues((prev) => ({ ...prev, [key]: value }));
   };
@@ -101,6 +149,8 @@ export function TemplateDialog({
       setMode("use");
       setConfirmDelete(false);
       setNewVarName("");
+      setComments([]);
+      setCommentText("");
     }
     onOpenChange(nextOpen);
   };
@@ -174,7 +224,7 @@ export function TemplateDialog({
         variable_required: cleanRequired,
       })
       .eq("id", template.id)
-      .select()
+      .select("*, profiles(username)")
       .single();
     setSaving(false);
     if (error) {
@@ -213,18 +263,19 @@ export function TemplateDialog({
         {mode === "use" ? (
           <>
             <DialogHeader>
-              <div className="flex items-start justify-between gap-2">
-                <div>
-                  <DialogTitle>{template.title}</DialogTitle>
-                  {template.description && (
-                    <DialogDescription>{template.description}</DialogDescription>
-                  )}
-                </div>
-              </div>
+              <DialogTitle>{template.title}</DialogTitle>
+              {template.description && (
+                <DialogDescription>{template.description}</DialogDescription>
+              )}
               <div className="flex items-center gap-2 pt-1">
                 <span className="rounded-full bg-primary/10 px-2.5 py-0.5 text-xs font-medium text-primary">
                   {getCategoryLabel(template.category)}
                 </span>
+                {template.profiles?.username && (
+                  <span className="text-xs text-muted-foreground">
+                    by {template.profiles.username}
+                  </span>
+                )}
               </div>
             </DialogHeader>
 
@@ -281,6 +332,75 @@ export function TemplateDialog({
               コピー
             </Button>
 
+            {/* コメントセクション */}
+            <div className="border-t pt-4 space-y-3">
+              <p className="text-sm font-medium">
+                レビュー・コメント（{comments.length}件）
+              </p>
+
+              {comments.length > 0 && (
+                <div className="space-y-2 max-h-60 overflow-y-auto">
+                  {comments.map((c) => (
+                    <div
+                      key={c.id}
+                      className="rounded-md border bg-muted/30 p-3 text-sm"
+                    >
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="font-medium text-xs">
+                          {c.profiles?.username ?? "unknown"}
+                        </span>
+                        <div className="flex items-center gap-2">
+                          <span className="text-[10px] text-muted-foreground">
+                            {new Date(c.created_at).toLocaleDateString("ja-JP")}
+                          </span>
+                          {user?.id === c.user_id && (
+                            <button
+                              onClick={() => handleDeleteComment(c.id)}
+                              className="text-[10px] text-muted-foreground hover:text-red-500"
+                            >
+                              削除
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                      <p className="text-muted-foreground whitespace-pre-wrap">
+                        {c.content}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {user ? (
+                <div className="flex gap-2">
+                  <Input
+                    placeholder="コメントを書く…"
+                    value={commentText}
+                    onChange={(e) => setCommentText(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && !e.shiftKey) {
+                        e.preventDefault();
+                        handlePostComment();
+                      }
+                    }}
+                  />
+                  <Button
+                    size="sm"
+                    className="shrink-0"
+                    disabled={!commentText.trim() || postingComment}
+                    onClick={handlePostComment}
+                  >
+                    送信
+                  </Button>
+                </div>
+              ) : (
+                <p className="text-xs text-muted-foreground">
+                  コメントするにはログインしてください
+                </p>
+              )}
+            </div>
+
+            {/* 編集・削除 */}
             <div className="flex gap-2 border-t pt-4">
               <Button
                 variant="outline"
@@ -361,11 +481,11 @@ export function TemplateDialog({
                 />
               </div>
 
-              {/* 変数の管理セクション */}
               <div className="rounded-lg border bg-muted/50 p-4 space-y-3">
                 <div>
                   <p className="text-sm font-medium">
-                    変数の管理{editVariables.length > 0 && `（${editVariables.length}件）`}
+                    変数の管理
+                    {editVariables.length > 0 && `（${editVariables.length}件）`}
                   </p>
                   <p className="text-xs text-muted-foreground mt-0.5">
                     例文・必須/任意の設定、変数の追加・削除ができます

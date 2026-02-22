@@ -1,9 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { getSupabase } from "@/lib/supabase";
+import { useAuth } from "@/components/auth-provider";
 import { extractVariables } from "@/lib/template";
 import { CATEGORIES } from "@/lib/categories";
 import { Input } from "@/components/ui/input";
@@ -26,6 +27,15 @@ import {
 
 export default function NewTemplatePage() {
   const router = useRouter();
+  const { user, loading: authLoading } = useAuth();
+
+  useEffect(() => {
+    if (!authLoading && !user) {
+      toast.error("投稿するにはログインが必要です");
+      router.push("/login");
+    }
+  }, [user, authLoading, router]);
+
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [templateText, setTemplateText] = useState("");
@@ -91,6 +101,7 @@ export default function NewTemplatePage() {
       category,
       variable_examples: cleanExamples,
       variable_required: cleanRequired,
+      author_id: user?.id ?? null,
     });
     setSaving(false);
     if (error) {

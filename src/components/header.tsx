@@ -2,11 +2,13 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useAuth } from "@/components/auth-provider";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
 export function Header() {
   const pathname = usePathname();
+  const { user, profile, loading, signOut } = useAuth();
 
   const navLinks = [
     { href: "/", label: "プロンプト" },
@@ -37,9 +39,28 @@ export function Header() {
             ))}
           </nav>
         </div>
-        <Button asChild size="sm">
-          <Link href="/new">＋ 新規投稿</Link>
-        </Button>
+
+        <div className="flex items-center gap-3">
+          {loading ? null : user ? (
+            <>
+              <Button asChild size="sm">
+                <Link href="/new">＋ 新規投稿</Link>
+              </Button>
+              <div className="flex items-center gap-2">
+                <span className="text-sm font-medium">
+                  {profile?.username ?? "未設定"}
+                </span>
+                <Button variant="ghost" size="sm" onClick={signOut}>
+                  ログアウト
+                </Button>
+              </div>
+            </>
+          ) : (
+            <Button asChild size="sm" variant="outline">
+              <Link href="/login">ログイン</Link>
+            </Button>
+          )}
+        </div>
       </div>
     </header>
   );

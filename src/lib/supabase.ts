@@ -11,6 +11,13 @@ export function getSupabase(): SupabaseClient {
   return _supabase;
 }
 
+export type Profile = {
+  id: string;
+  username: string;
+  avatar_url: string | null;
+  created_at: string;
+};
+
 export type PromptTemplate = {
   id: string;
   title: string;
@@ -19,5 +26,18 @@ export type PromptTemplate = {
   category: string;
   variable_examples: Record<string, string>;
   variable_required: Record<string, boolean>;
+  author_id: string | null;
   created_at: string;
+  // joined
+  profiles?: Profile;
+};
+
+export type Comment = {
+  id: string;
+  user_id: string;
+  template_id: string;
+  content: string;
+  created_at: string;
+  // joined
+  profiles?: Profile;
 };
