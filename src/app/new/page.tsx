@@ -1,10 +1,9 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { getSupabase } from "@/lib/supabase";
-import { useAuth } from "@/components/auth-provider";
 import { extractVariables } from "@/lib/template";
 import { CATEGORIES } from "@/lib/categories";
 import { Input } from "@/components/ui/input";
@@ -27,14 +26,6 @@ import {
 
 export default function NewTemplatePage() {
   const router = useRouter();
-  const { user, loading: authLoading } = useAuth();
-
-  useEffect(() => {
-    if (!authLoading && !user) {
-      toast.error("投稿するにはログインが必要です");
-      router.push("/login");
-    }
-  }, [user, authLoading, router]);
 
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
@@ -42,6 +33,8 @@ export default function NewTemplatePage() {
   const [category, setCategory] = useState("other");
   const [examples, setExamples] = useState<Record<string, string>>({});
   const [required, setRequired] = useState<Record<string, boolean>>({});
+  const [recommendedUsage, setRecommendedUsage] = useState("");
+  const [recommendedAi, setRecommendedAi] = useState("");
   const [newVarName, setNewVarName] = useState("");
   const [saving, setSaving] = useState(false);
 
@@ -101,7 +94,9 @@ export default function NewTemplatePage() {
       category,
       variable_examples: cleanExamples,
       variable_required: cleanRequired,
-      author_id: user?.id ?? null,
+      recommended_usage: recommendedUsage.trim(),
+      recommended_ai: recommendedAi.trim(),
+      author_id: null,
     });
     setSaving(false);
     if (error) {
@@ -170,6 +165,24 @@ export default function NewTemplatePage() {
                 className="font-mono"
                 value={templateText}
                 onChange={(e) => setTemplateText(e.target.value)}
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium">推奨の使い方（任意）</label>
+              <Input
+                placeholder="例: ブログ記事の構成を考える際に使用"
+                value={recommendedUsage}
+                onChange={(e) => setRecommendedUsage(e.target.value)}
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium">おすすめ適用先AI（任意）</label>
+              <Input
+                placeholder="例: ChatGPT, Claude, Gemini"
+                value={recommendedAi}
+                onChange={(e) => setRecommendedAi(e.target.value)}
               />
             </div>
 

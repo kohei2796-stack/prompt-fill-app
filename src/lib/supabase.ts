@@ -14,7 +14,9 @@ export function getSupabase(): SupabaseClient {
 export type Profile = {
   id: string;
   username: string;
+  email: string;
   avatar_url: string | null;
+  role: "admin" | "sub_admin" | "user";
   created_at: string;
 };
 
@@ -26,6 +28,8 @@ export type PromptTemplate = {
   category: string;
   variable_examples: Record<string, string>;
   variable_required: Record<string, boolean>;
+  recommended_usage: string;
+  recommended_ai: string;
   author_id: string | null;
   created_at: string;
   // joined
